@@ -1,0 +1,153 @@
+while true do
+local TIMEOUT_SECONDS = 200 -- 3p
+local SCRIPT_DEBUG = false  -- true để hiện log
+local BELI_NAME = "Beli"
+local FRAG_NAME = "Fragments"
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TeleportService = game:GetService("TeleportService")
+local HttpService = game:GetService("HttpService")
+
+local localPlayer = Players.LocalPlayer
+local PLACE_ID = game.PlaceId
+
+local function debugPrint(...)
+	if SCRIPT_DEBUG then
+		print("[AutoHop-LessPlayer]", ...)
+	end
+end
+
+local function safeRequest(req)
+	if syn and syn.request then
+		return syn.request(req)
+	elseif http and http.request then
+		return http.request(req)
+	elseif request then
+		return request(req)
+	elseif http_request then
+		return http_request(req)
+	end
+end
+
+local function findLowPlayerServer()
+	local url = ("https://games.roblox.com/v1/games/%s/servers/Public?sortOrder=Asc&limit=100"):format(PLACE_ID)
+	local r = safeRequest({
+		Url = url,
+		Method = "GET",
+		Headers = {["Accept"] = "application/json"}
+	})
+	if not r or not r.Body then return nil end
+
+	local data = HttpService:JSONDecode(r.Body)
+	if not data or not data.data then return nil end
+
+	local lowestServer = nil
+	local lowestCount = math.huge
+
+	for _, s in ipairs(data.data) do
+		if s.playing < s.maxPlayers and s.id ~= game.JobId then
+			if s.playing < lowestCount then
+				lowestCount = s.playing
+				lowestServer = s.id
+			end
+		end
+	end
+
+	debugPrint("Jax")
+	return lowestServer
+end
+
+local function hopServer()
+	debugPrint("Jax")
+	local sid = findLowPlayerServer()
+	if sid then
+		pcall(function()
+			TeleportService:TeleportToPlaceInstance(PLACE_ID, sid, localPlayer)
+		end)
+	else
+		debugPrint("Jax")
+		pcall(function()
+			TeleportService:Teleport(PLACE_ID, localPlayer)
+		end)
+	end
+end
+
+local function getStat(name)
+	local stats = localPlayer:FindFirstChild("leaderstats")
+	if stats then
+		local val = stats:FindFirstChild(name)
+		if val and val.Value then
+			return tonumber(val.Value)
+		end
+	end
+	return nil
+end
+
+local damageDetected = false
+local function watchDamageRemotes()
+	for _, v in pairs(ReplicatedStorage:GetDescendants()) do
+		if v:IsA("RemoteEvent") and (string.find(v.Name:lower(), "damage") or string.find(v.Name:lower(), "hit")) then
+			v.OnClientEvent:Connect(function(...)
+				damageDetected = true
+				debugPrint("Jax")
+			end)
+		end
+	end
+end
+
+spawn(function()
+	debugPrint("Jax")
+
+	local beliStart = getStat(BELI_NAME) or 0
+	local fragStart = getStat(FRAG_NAME) or 0
+
+	local beliIncreased = false
+	local fragDecreased = false
+
+	local stats = localPlayer:WaitForChild("leaderstats", 10)
+	if not stats then return end
+
+	local beliObj = stats:FindFirstChild(BELI_NAME)
+	local fragObj = stats:FindFirstChild(FRAG_NAME)
+
+	if beliObj then
+		beliObj.Changed:Connect(function()
+			local current = tonumber(beliObj.Value)
+			if current > beliStart then
+				beliIncreased = true
+				debugPrint("Jax")
+			end
+		end)
+	end
+
+	if fragObj then
+		fragObj.Changed:Connect(function()
+			local current = tonumber(fragObj.Value)
+			if current < fragStart then
+				fragDecreased = true
+				debugPrint("Jax")
+			end
+		end)
+	end
+
+	watchDamageRemotes()
+
+	local elapsed = 0
+	while elapsed < TIMEOUT_SECONDS do
+		wait(1)
+		elapsed += 1
+		if beliIncreased or fragDecreased or damageDetected then
+			debugPrint("Jax")
+			return
+		end
+	end
+
+	if not (beliIncreased or fragDecreased or damageDetected) then
+		hopServer()
+	else
+		debugPrint("Jax")
+	end
+end)
+    task.wait(220)
+end
